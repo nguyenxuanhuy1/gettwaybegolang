@@ -1,0 +1,19 @@
+# Root folder of your project
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Build command — build đúng main trong cmd/server
+  cmd = "go build -o ./tmp/main.exe ./cmd/server"
+
+  # Executable to run
+  bin = "./tmp/main.exe"
+
+  # Watch all .go files
+  include_ext = ["go"]
+
+  # Do not watch tmp folder
+  exclude_dir = ["tmp", "vendor"]
+
+  # Delay to avoid multiple rebuilds
+  delay = 1000
