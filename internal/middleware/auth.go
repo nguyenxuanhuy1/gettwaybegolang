@@ -28,7 +28,7 @@ func NewAuthMiddleware(
 ) *AuthMiddleware {
 	return &AuthMiddleware{
 		authService: authService,
-		planService: planService,
+		planService: planService, 8
 		userRepo:    userRepo,
 	}
 }

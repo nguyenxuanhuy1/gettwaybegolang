@@ -3,62 +3,63 @@ package handler
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"gateway/config"
+	"gateway/internal/repository/postgres"
 
 	"github.com/gin-gonic/gin"
 )
 
-type GoogleAuthHandler struct{}
-
-func NewGoogleAuthHandler() *GoogleAuthHandler {
-	return &GoogleAuthHandler{}
+type GoogleAuthHandler struct {
+	userRepo *postgres.UserRepository
 }
 
-// HandleLogin initiates Google OAuth flow
+func NewGoogleAuthHandler(userRepo *postgres.UserRepository) *GoogleAuthHandler {
+	return &GoogleAuthHandler{
+		userRepo: userRepo,
+	}
+}
+
+
 func (h *GoogleAuthHandler) HandleLogin(c *gin.Context) {
-	// Generate state token for CSRF protection
 	b := make([]byte, 32)
 	rand.Read(b)
 	state := base64.URLEncoding.EncodeToString(b)
 
-	// Store state in session/cookie (simplified - use secure session in production)
 	c.SetCookie("oauth_state", state, 600, "/", "", false, true)
 
-	// Redirect to Google OAuth
 	url := config.GoogleOAuthConfig.AuthCodeURL(state)
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
-// HandleCallback handles Google OAuth callback
+
 func (h *GoogleAuthHandler) HandleCallback(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	// Verify state token
 	state := c.Query("state")
 	savedState, err := c.Cookie("oauth_state")
 	if err != nil || state != savedState {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid state token"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid oauth state"})
 		return
 	}
 
-	// Exchange code for token
 	code := c.Query("code")
 	token, err := config.GoogleOAuthConfig.Exchange(ctx, code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to exchange token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "oauth exchange failed"})
 		return
 	}
 
-	// Get user info from Google
 	client := config.GoogleOAuthConfig.Client(ctx, token)
 	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user info"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch user info"})
 		return
 	}
 	defer resp.Body.Close()
@@ -70,27 +71,82 @@ func (h *GoogleAuthHandler) HandleCallback(c *gin.Context) {
 		Picture string `json:"picture"`
 	}
 
-	if err := c.BindJSON(&userInfo); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse user info"})
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid user info"})
 		return
 	}
 
-	// Create session token (simplified - use JWT or Redis session in production)
-	// For now, store google_id as session token
-	sessionToken := userInfo.ID // In production: generate JWT with user info
+	userID, err := h.getOrCreateUser(
+		ctx,
+		userInfo.ID,
+		userInfo.Email,
+		userInfo.Name,
+		userInfo.Picture,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user creation failed"})
+		return
+	}
 
-	// Set session cookie
-	c.SetCookie("session_token", sessionToken, 3600*24*7, "/", "", false, true) // 7 days
+	sessionToken := generateSecureToken()
+	c.SetCookie(
+		"session_token",
+		sessionToken,
+		3600*24*7,
+		"/",
+		"",
+		false, 
+		true,
+	)
 
-	// Store user info in cookie for frontend (temporary)
-	c.SetCookie("user_email", userInfo.Email, 3600*24*7, "/", "", false, false)
-	c.SetCookie("user_name", userInfo.Name, 3600*24*7, "/", "", false, false)
-	c.SetCookie("google_id", userInfo.ID, 3600*24*7, "/", "", false, false)
+	c.Redirect(
+		http.StatusTemporaryRedirect,
+		config.Config.FrontendAuthRedirectURL,
+	)
+}
 
-	// Redirect to frontend
-	redirectURL := config.Config.FrontendAuthRedirectURL + 
-		"?logged_in=true&email=" + userInfo.Email + 
-		"&name=" + userInfo.Name
 
-	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+func (h *GoogleAuthHandler) getOrCreateUser(
+	ctx context.Context,
+	googleID, email, username, avatar string,
+) (int, error) {
+
+	var userID int
+	err := h.userRepo.GetDB().
+		QueryRowContext(ctx, `SELECT id FROM users WHERE google_id = $1`, googleID).
+		Scan(&userID)
+
+	if err == nil {
+		// Update avatar
+		_, _ = h.userRepo.GetDB().
+			ExecContext(ctx, `UPDATE users SET avatar = $1 WHERE id = $2`, avatar, userID)
+		return userID, nil
+	}
+
+	if err != sql.ErrNoRows {
+		return 0, err
+	}
+
+	if username == "" {
+		username = email
+	}
+
+	err = h.userRepo.GetDB().
+		QueryRowContext(ctx, `
+			INSERT INTO users (username, email, google_id, avatar, role, coin, locked, created_at)
+			VALUES ($1, $2, $3, $4, 'user', 0, false, NOW())
+			RETURNING id
+		`,
+			username, email, googleID, avatar,
+		).
+		Scan(&userID)
+
+	return userID, err
+}
+
+
+func generateSecureToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.URLEncoding.EncodeToString(b)
 }
