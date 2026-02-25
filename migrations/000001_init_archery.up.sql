@@ -1,100 +1,162 @@
 create table users (
-   id         serial primary key,
-   username   text not null,
-   role       text not null default 'user',
-   avatar     text,
-   locked     boolean default false,
-   coin       integer not null default 0,
+   id         bigserial primary key,
    google_id  text not null unique,
    email      text not null unique,
-   created_at timestamptz default now()
+   username   text,
+   avatar     text,
+   role       text not null default 'user' check ( role in ( 'user',
+                                                       'admin' ) ),
+   locked     boolean not null default false,
+   created_at timestamptz not null default now()
 );
 
-create index idx_users_google_id on
-   users (
-      google_id
-   );
 create index idx_users_email on
    users (
       email
    );
-
-create table products (
-   id         serial primary key,
-   code       text unique not null,
-   name       text not null,
-   rate_limit integer,
-   active     boolean default true
-);
-
-create table user_products (
-   user_id      integer
-      references users ( id ),
-   product_code text
-      references products ( code ),
-   active       boolean default true,
-   started_at   timestamptz default now(),
-   expired_at   timestamptz,
-   primary key ( user_id,
-                 product_code )
-);
-
-create index idx_user_products_active on
-   user_products (
-      user_id,
-      active
+create index idx_users_google_id on
+   users (
+      google_id
    );
 
-create table product_prices (
-   id           serial primary key,
-   product_code text
-      references products ( code ),
-   unit         text not null check ( unit in ( 'request',
-                                        'upload',
-                                        'gb' ) ),
-   price        integer not null check ( price >= 0 ),
-   active       boolean default true,
-   created_at   timestamptz default now()
+
+-- API KEYS
+create table api_keys (
+   id           bigserial primary key,
+   user_id      bigint not null
+      references users ( id )
+         on delete cascade,
+   name         text not null,
+   key_hash     text not null unique,
+   revoked      boolean not null default false,
+   last_used_at timestamptz,
+   created_at   timestamptz not null default now()
 );
 
-create table coin_transactions (
-   id         serial primary key,
-   user_id    integer not null
-      references users ( id ),
-   amount     integer not null check ( amount <> 0 ),
-   type       text not null check ( type in ( 'topup',
-                                        'deduct' ) ),
-   reason     text,
-   request_id text unique,
-   created_at timestamptz default now()
-);
-
-create index idx_coin_tx_user on
-   coin_transactions (
+create index idx_api_keys_user on
+   api_keys (
       user_id
    );
-
-create table api_keys (
-   user_id      integer primary key
-      references users ( id ),
-   key_hash     text not null unique,
-   last_used_at timestamptz,
-   revoked      boolean default false,
-   created_at   timestamptz default now()
-);
-
 create index idx_api_keys_hash on
    api_keys (
       key_hash
    );
 
-create table api_logs (
-   id           bigserial primary key,
-   user_id      integer
-      references users ( id ),
-   product_code text,
-   endpoint     text,
-   cost         integer,
-   request_id   text,
-   created_at   timestamptz default now()
+
+-- PLANS
+create table plans (
+   id                 bigserial primary key,
+   code               text not null unique,
+   name               text not null,
+   price              bigint not null default 0,
+   rate_limit_per_sec integer not null,
+   monthly_quota      bigint,
+   active             boolean not null default true,
+   created_at         timestamptz not null default now()
 );
+
+
+-- USER SUBSCRIPTIONS
+create table user_subscriptions (
+   id         bigserial primary key,
+   user_id    bigint not null
+      references users ( id )
+         on delete cascade,
+   plan_id    bigint not null
+      references plans ( id ),
+   status     text not null check ( status in ( 'active',
+                                            'expired',
+                                            'cancelled',
+                                            'trial' ) ),
+   started_at timestamptz not null default now(),
+   expired_at timestamptz,
+   created_at timestamptz not null default now()
+);
+
+create index idx_user_subscriptions_user on
+   user_subscriptions (
+      user_id
+   );
+
+create index idx_user_subscriptions_status on
+   user_subscriptions (
+      status
+   );
+
+
+-- WALLET (1 user = 1 ví)
+create table wallets (
+   user_id    bigint primary key
+      references users ( id )
+         on delete cascade,
+   balance    bigint not null default 0,
+   updated_at timestamptz not null default now()
+);
+
+
+-- WALLET TRANSACTIONS
+create table wallet_transactions (
+   id         bigserial primary key,
+   user_id    bigint not null
+      references users ( id )
+         on delete cascade,
+   amount     bigint not null,
+   type       text not null check ( type in ( 'topup',
+                                        'deduct',
+                                        'refund' ) ),
+   reason     text,
+   request_id text unique,
+   created_at timestamptz not null default now()
+);
+
+create index idx_wallet_tx_user on
+   wallet_transactions (
+      user_id
+   );
+
+
+-- USAGE LOGS
+create table usage_logs (
+   id         bigserial primary key,
+   user_id    bigint
+      references users ( id )
+         on delete set null,
+   api_key_id bigint
+      references api_keys ( id )
+         on delete set null,
+   endpoint   text,
+   cost       bigint not null default 0,
+   request_id text,
+   created_at timestamptz not null default now()
+);
+
+create index idx_usage_user on
+   usage_logs (
+      user_id
+   );
+create index idx_usage_created on
+   usage_logs (
+      created_at
+   );
+
+
+-- SAMPLE PLANS (OPTIONAL)
+insert into plans (
+   code,
+   name,
+   price,
+   rate_limit_per_sec,
+   monthly_quota
+) values ( 'free',
+           'Free Plan',
+           0,
+           3,
+           10000 ),( 'basic',
+                     'Basic Plan',
+                     10000,
+                     10,
+                     100000 ),( 'pro',
+                                'Pro Plan',
+                                30000,
+                                20,
+                                500000 );

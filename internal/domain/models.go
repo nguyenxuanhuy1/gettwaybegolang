@@ -4,81 +4,92 @@ import "time"
 
 // User represents a user in the system
 type User struct {
-	ID        int       `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
+	ID        int64     `json:"id"`
 	GoogleID  string    `json:"google_id"`
-	Role      string    `json:"role"`
+	Email     string    `json:"email"`
+	Username  string    `json:"username"`
 	Avatar    *string   `json:"avatar"`
-	Coin      int       `json:"coin"`
+	Role      string    `json:"role"` // 'user' | 'admin'
 	Locked    bool      `json:"locked"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Session represents a user login session
+type Session struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	TokenHash string    `json:"-"`
+	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 // APIKey represents an API key for authentication
 type APIKey struct {
-	UserID     int        `json:"user_id"`
-	KeyHash    string     `json:"key_hash"`
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	Name       string     `json:"name"`
+	KeyHash    string     `json:"-"`
 	Revoked    bool       `json:"revoked"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
-// Product represents a subscription product
-type Product struct {
-	ID        int    `json:"id"`
-	Code      string `json:"code"`
-	Name      string `json:"name"`
-	RateLimit *int   `json:"rate_limit"`
-	Active    bool   `json:"active"`
+// Plan represents a subscription plan (aligns with DB table `plans`)
+type Plan struct {
+	ID               int64     `json:"id"`
+	Code             string    `json:"code"`
+	Name             string    `json:"name"`
+	Price            int64     `json:"price"`
+	RateLimitPerSec  int       `json:"rate_limit_per_sec"`
+	MonthlyQuota     *int64    `json:"monthly_quota"`
+	Active           bool      `json:"active"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
-// UserProduct represents a user's active subscription
-type UserProduct struct {
-	UserID      int        `json:"user_id"`
-	ProductCode string     `json:"product_code"`
-	Active      bool       `json:"active"`
-	StartedAt   time.Time  `json:"started_at"`
-	ExpiredAt   *time.Time `json:"expired_at"`
+// Subscription represents a user's plan subscription (aligns with DB table `user_subscriptions`)
+type Subscription struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	PlanID    int64      `json:"plan_id"`
+	Status    string     `json:"status"` // 'active' | 'expired' | 'cancelled' | 'trial'
+	StartedAt time.Time  `json:"started_at"`
+	ExpiredAt *time.Time `json:"expired_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
-// ProductPrice represents pricing for a product
-type ProductPrice struct {
-	ID          int       `json:"id"`
-	ProductCode string    `json:"product_code"`
-	Unit        string    `json:"unit"` // 'request', 'upload', 'gb'
-	Price       int       `json:"price"`
-	Active      bool      `json:"active"`
-	CreatedAt   time.Time `json:"created_at"`
+// SubscriptionWithPlan combines subscription with its plan details
+type SubscriptionWithPlan struct {
+	Subscription
+	PlanCode        string `json:"plan_code"`
+	PlanName        string `json:"plan_name"`
+	RateLimitPerSec int    `json:"rate_limit_per_sec"`
 }
 
-// CoinTransaction represents a coin transaction
-type CoinTransaction struct {
-	ID        int       `json:"id"`
-	UserID    int       `json:"user_id"`
-	Amount    int       `json:"amount"` // negative for deduct, positive for topup
-	Type      string    `json:"type"`   // 'topup' or 'deduct'
+// Wallet represents a user's wallet
+type Wallet struct {
+	UserID    int64     `json:"user_id"`
+	Balance   int64     `json:"balance"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// WalletTransaction represents a wallet transaction
+type WalletTransaction struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Amount    int64     `json:"amount"` // positive=topup, negative=deduct
+	Type      string    `json:"type"`   // 'topup' | 'deduct' | 'refund'
 	Reason    *string   `json:"reason"`
 	RequestID *string   `json:"request_id"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// APILog represents an API request log
-type APILog struct {
-	ID          int64      `json:"id"`
-	UserID      int        `json:"user_id"`
-	ProductCode *string    `json:"product_code"`
-	Endpoint    *string    `json:"endpoint"`
-	Cost        *int       `json:"cost"`
-	RequestID   *string    `json:"request_id"`
-	CreatedAt   time.Time  `json:"created_at"`
-}
-
-// UserPlanInfo combines user product with product details
-type UserPlanInfo struct {
-	UserID      int
-	ProductCode string
-	ProductName string
-	RateLimit   *int
-	ExpiredAt   *time.Time
+// UsageLog represents an API request log (aligns with DB table `usage_logs`)
+type UsageLog struct {
+	ID        int64     `json:"id"`
+	UserID    *int64    `json:"user_id"`
+	APIKeyID  *int64    `json:"api_key_id"`
+	Endpoint  *string   `json:"endpoint"`
+	Cost      int64     `json:"cost"`
+	RequestID *string   `json:"request_id"`
+	CreatedAt time.Time `json:"created_at"`
 }

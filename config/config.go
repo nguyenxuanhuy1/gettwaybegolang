@@ -15,12 +15,12 @@ type AppConfig struct {
 	DBUser                  string
 	DBPass                  string
 	DBName                  string
-	RedisURL                string
-	CloudinaryURL           string
 	GoogleClientID          string
 	GoogleClientSecret      string
 	GoogleRedirectURL       string
 	FrontendAuthRedirectURL string
+	KongAdminURL            string
+	InternalSecret          string
 }
 
 var Config AppConfig
@@ -38,12 +38,12 @@ func LoadConfig() {
 		DBUser:                  os.Getenv("DB_USER"),
 		DBPass:                  os.Getenv("DB_PASSWORD"),
 		DBName:                  os.Getenv("DB_NAME"),
-		RedisURL:                os.Getenv("REDIS_URL"),
-		CloudinaryURL:           os.Getenv("CLOUDINARY_URL"),
 		GoogleClientID:          os.Getenv("GOOGLE_CLIENT_ID"),
 		GoogleClientSecret:      os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GoogleRedirectURL:       os.Getenv("GOOGLE_REDIRECT_URL"),
 		FrontendAuthRedirectURL: os.Getenv("FRONTEND_AUTH_REDIRECT_URL"),
+		KongAdminURL:            os.Getenv("KONG_ADMIN_URL"),
+		InternalSecret:          os.Getenv("INTERNAL_SECRET"),
 	}
 
 	InitGoogleOAuth()

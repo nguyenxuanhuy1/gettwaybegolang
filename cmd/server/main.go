@@ -4,18 +4,18 @@ import (
 	"gateway/config"
 	"gateway/internal/router"
 	"log"
+	"os"
 )
 
 func main() {
-	// Initialize database
 	config.ConnectDB()
-	
-	// Initialize Redis
-	config.ConnectRedis()
+	r := router.SetupRouter()
 
-	// Setup router with dependencies
-	r := router.SetupRouter(config.DB, config.RedisClient)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-	log.Println("Server is running on :8081")
-	r.Run(":8081")
+	log.Println("Server is running on :" + port)
+	r.Run(":" + port)
 }
